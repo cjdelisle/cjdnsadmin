@@ -1,0 +1,22 @@
+{
+    "name": "cjdnsadmin",
+    "version": "0.0.0",
+    "license": "GPL-3.0+",
+    "description": "Admin API connector for talking to cjdns engine",
+    "repository": "https://github.com/cjdelisle/cjdnsadmin",
+    "dependencies": {
+        "saferphore": "~0.0.0",
+        "bencode": "~0.7.0",
+        "nthen": "~0.1.1"
+    },
+    "devDependencies": {
+        "jshint": "~2.9.1"
+    },
+    "scripts": {
+        "lint": "jshint --verbose --config .jshintrc --exclude-path .jshintignore .",
+        "test": "echo \"no tests\""
+    },
+    "bin" : {
+        "cexec" : "./cexec.js"
+    }
+}
