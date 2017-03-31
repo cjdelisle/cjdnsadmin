@@ -5,9 +5,10 @@
   "description": "Admin API connector for talking to cjdns engine",
   "repository": "https://github.com/cjdelisle/cjdnsadmin",
   "dependencies": {
-    "saferphore": "~0.0.0",
     "bencode": "~0.7.0",
-    "nthen": "~0.1.1"
+    "jshint": "^2.9.4",
+    "nthen": "^0.1.4",
+    "saferphore": "0.0.1"
   },
   "devDependencies": {
     "flow-bin": "^0.42.0",
