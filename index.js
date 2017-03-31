@@ -1,4 +1,4 @@
-/* vim: set expandtab ts=4 sw=4: */
+/*@flow*/
 /*
  * You may redistribute this program and/or modify it under the terms of
  * the GNU General Public License as published by the Free Software Foundation,
@@ -32,7 +32,7 @@ const sendmsg = function (sock, addr, port, msg, txid, callback) {
         timeout: to
     };
 
-    sock.send(msg, 0, msg.length, port, addr, function(err, bytes) {
+    sock._.send(msg, 0, msg.length, port, addr, function(err, bytes) {
         if (err) {
             clearTimeout(to);
             delete sock.handlers[txid];
@@ -46,9 +46,10 @@ const callFunc = function (sock, addr, port, pass, func, args, callback) {
     var cookieMsg = new Buffer(Bencode.encode({'q':'cookie','txid':cookieTxid}));
     sendmsg(sock, addr, port, cookieMsg, cookieTxid, function (err, ret) {
         if (err) { callback(err); return; }
+        if (!ret) { throw new Error(); }
         var cookie = ret.cookie;
         if (typeof(cookie) !== 'string') { throw new Error("invalid cookie in [" + ret + "]"); }
-        var json = {
+        var json /*:Object*/ = {
             txid: String(sock.counter++),
             q: func,
             args: {}
@@ -169,12 +170,20 @@ const getFunctions = function (sock, addr, port, pass, callback) {
     });
 };
 
-const connect = module.exports.connect = function (addr, port, pass, callback) {
-    var sock = UDP.createSocket((addr.indexOf(':') !== -1) ? 'udp6' : 'udp4');
-    sock.semaphore = Saferphore.create(4);
-    sock.handlers = {};
-    sock.counter = Math.floor(Math.random() * 4000000000);
-    sock.on('message', function (msg) {
+const connect = module.exports.connect = function (
+    addr /*:string*/,
+    port /*:number*/,
+    pass /*:?string*/,
+    callback /*:(Object)=>void*/)
+{
+    const sock = {
+        _: UDP.createSocket((addr.indexOf(':') !== -1) ? 'udp6' : 'udp4'),
+        semaphore: Saferphore.create(4),
+        handlers: {},
+        counter: Math.floor(Math.random() * 4000000000),
+        defaultHandler: undefined
+    };
+    sock._.on('message', function (msg) {
         var response = Bencode.decode(msg, 'utf8');
         if (!response.txid) {
             throw new Error("Response [" + msg + "] with no txid");
@@ -198,16 +207,20 @@ const connect = module.exports.connect = function (addr, port, pass, callback) {
         }));
     }).nThen(function (waitFor) {
         getFunctions(sock, addr, port, pass, function (cjdns) {
-            cjdns.disconnect = function () { sock.close(); };
+            cjdns.disconnect = function () { sock._.close(); };
             cjdns.setDefaultHandler = function (handler) { sock.defaultHandler = handler; };
+            cjdns._ = sock;
             callback(cjdns);
         });
     });
 };
 
-const connectWithAdminInfo = module.exports.connectWithAdminInfo = function (callback) {
+const connectWithAdminInfo = module.exports.connectWithAdminInfo = function (
+    callback /*:(Object)=>void*/)
+{
     var cjdnsAdmin = {'addr': '127.0.0.1', 'port': 11234, 'password': 'NONE'};
     nThen(function (waitFor) {
+        if (!process.env.HOME) { throw new Error(); }
         Fs.readFile(process.env.HOME + '/.cjdnsadmin', waitFor(function (err, ret) {
             if (err && err.code !== 'ENOENT') { throw err; }
             if (!err) { cjdnsAdmin = JSON.parse(String(ret)); }
@@ -217,9 +230,14 @@ const connectWithAdminInfo = module.exports.connectWithAdminInfo = function (cal
     });
 };
 
-const connectAsAnon = module.exports.connectAsAnon = function (callback, addr, port) {
+const connectAsAnon = module.exports.connectAsAnon = function (
+    callback /*:(Object)=>void*/,
+    addr /*:string*/,
+    port /*:number*/)
+{
     var cjdnsAdmin = {'addr': addr || '127.0.0.1', 'port': port || 11234, 'password': 'NONE'};
     nThen(function (waitFor) {
+        if (!process.env.HOME) { throw new Error(); }
         Fs.readFile(process.env.HOME + '/.cjdnsadmin', waitFor(function (err, ret) {
             if (!err) { cjdnsAdmin = JSON.parse(String(ret)); }
         }));
