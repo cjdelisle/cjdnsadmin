@@ -7,7 +7,7 @@ description.
 ```javascript
 const Cjdnsadmin = require('cjdnsadmin');
 
-Cjdnsadmin.connectWithAdminInfo((err, cjdns) => {
+Cjdnsadmin.connect((err, cjdns) => {
     if (err) {
         console.error(err.message);
         return;
