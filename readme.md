@@ -162,7 +162,7 @@ not running and you should (re)start it.
 2. Is there a `.cjdnsadmin` file ?
   * In the example error above, it shows there is one (`using cjdnsadmin file at [/Users/user/.cjdnsadmin]`)
   * If there is a file, make sure that it contains the same port that is specified in the cjdroute.conf
-  * If everything is default, try just renaming the file to _.cjdnsadmin and see if that fixes the problem
+  * If everything is default, try just renaming the file so it will not be used, see if that fixes the problem
 
 ```
 node ./cexec.js
