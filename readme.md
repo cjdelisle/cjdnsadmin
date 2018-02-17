@@ -7,7 +7,12 @@ description.
 ```javascript
 const Cjdnsadmin = require('cjdnsadmin');
 
-Cjdnsadmin.connectWithAdminInfo((cjdns) => {
+Cjdnsadmin.connectWithAdminInfo((err, cjdns) => {
+    if (err) {
+        console.error(err.message);
+        return;
+    }
+
     // print all available functions, this depends on your cjdns engine
     cjdns.functions((err, funcs) => (console.log(funcs))) });
 
@@ -22,7 +27,7 @@ Cjdnsadmin.connectWithAdminInfo((cjdns) => {
 });
 ```
 
-# cexec bash tool to execute calls to cjdns
+## cexec bash tool to execute calls to cjdns
 
 ```bash
 notgay:cjdnsadmin user$ cexec 'Allocator_bytesAllocated()'
@@ -107,3 +112,94 @@ List of available RPC requests with parameters is as follows:
 ]
 notgay:cjdnsadmin user$
 ```
+
+## How it works and debugging
+
+This library connects to the cjdns engine which has a UDP admin socket. Some of the RPC calls on this
+socket are unauthenticated, so anyone who can message the socket can call them, other RPC calls require
+a password to auth. The default port is 11234 and the default password in the cjdroute.conf file is
+"NONE". The default bind address is 127.0.0.1 so anyone with shell on the machine to make any call.
+
+You can change the port and password in the cjdroute.conf file under the "admin" section, however if
+you do this, you must also create a file in your home directory called `.cjdnsadmin` which contains
+the addr, port and password.
+
+For example:
+
+```bash
+echo '{"addr": "127.0.0.1", "port": 11234, "password": "super secret password"}' > ~/.cjdnsadmin
+```
+
+### Connecting
+
+If you have issues connecting, you might see a message like this:
+
+```
+Could not find cjdns node at 127.0.0.1:11235 using cjdnsadmin file at [/Users/user/.cjdnsadmin] see: https://github.com/cjdelisle/cjdnsadmin#connecting
+```
+
+#### Is your cjdns node running?
+
+Check if your cjdns process is running by using `ps -ef | grep cjdroute`
+
+```
+$ ps -ef | grep cjdroute
+    0 97868 24483   0 Sun03PM ttys000    0:00.03 sudo ./cjdroute
+    0 97869 97868   0 Sun03PM ttys000    0:00.01 ./cjdroute
+    0 97870 97869   0 Sun03PM ttys000  196:33.08 /Users/user/wrk/cjdns/cjdroute core /tmp client-core-zm0mlw5s4wg6r1h5s2x3zgqbs1grfn
+  501 11624 59620   0  5:58PM ttys002    0:00.00 grep cjdroute
+$
+```
+
+Here the process that says `cjdroute core` is the one, if you only see a line with "grep" then it's
+not running and you should (re)start it.
+
+#### Is the port correct?
+
+1. Have you changed the port in the cjdroute.conf file ?
+  * Check the "admin" section of the cjdroute.conf file to make sure the port is `11234` and the bind
+  address is `127.0.0.1`.
+2. Is there a `.cjdnsadmin` file ?
+  * In the example error above, it shows there is one (`using cjdnsadmin file at [/Users/user/.cjdnsadmin]`)
+  * If there is a file, make sure that it contains the same port that is specified in the cjdroute.conf
+  * If everything is default, try just renaming the file to _.cjdnsadmin and see if that fixes the problem
+
+```
+node ./cexec.js
+Could not find cjdns (127.0.0.1:11235) using cjdnsadmin file at [/Users/user/.cjdnsadmin] see: https://github.com/cjdelisle/cjdnsadmin#connecting
+$ mv ~/.cjdnsadmin ~/_unused_.cjdnsadmin
+$ node ./cexec.js
+Usage: ./tools/cexec 'ping()' ## For example to send a ping request
+List of available RPC requests with parameters is as follows:
+[
+  "AdminLog_logMany(required Int count)",
+  "AdminLog_subscribe(Int line, String level, String file)",
+....
+```
+
+### Authentication Issues
+
+If you are not able to authenticate, you might see a message like the following:
+
+```
+Could not authenticate with cjdns (127.0.0.1:11234) using cjdnsadmin file at [/Users/user/.cjdnsadmin] see: https://github.com/cjdelisle/cjdnsadmin#authentication-issues
+```
+
+#### Do you have a .cjdnsadmin file with wrong information ?
+
+If the error message says `using cjdnsadmin file at [<path>.cjdnsadmin]` like the example, try renaming
+that file so it will not be used. For example:
+
+```
+mv ~/.cjdnsadmin ~/_unused_.cjdnsadmin
+```
+
+Then try again.
+
+#### Have you changed the default password (or is your cjdroute.conf very old) ?
+
+Very old versions of cjdroute used randomized default admin passwords, new versions use NONE as the
+default password always. Check the "admin" section of your `cjdroute.conf` file to see if the password
+is something other than `"NONE"`. If it is, make sure you have a `.cjdnsadmin` file which contains the
+same password.
+

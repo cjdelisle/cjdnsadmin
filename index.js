@@ -20,13 +20,13 @@ const Fs = require('fs');
 const nThen = require('nthen');
 const Saferphore = require('saferphore');
 
-const TIMEOUT_MILLISECONDS = 10000;
+const DEFAULT_TIMEOUT = 10000;
 
 const sendmsg = function (sock, addr, port, msg, txid, callback) {
-    var to = setTimeout(function () {
-        callback(new Error("timeout after " + TIMEOUT_MILLISECONDS + "ms"));
+    const to = setTimeout(function () {
+        callback(new Error("timeout after " + sock.timeout + "ms"));
         delete sock.handlers[txid];
-    }, TIMEOUT_MILLISECONDS);
+    }, sock.timeout);
     sock.handlers[txid] = {
         callback: callback,
         timeout: to
@@ -42,14 +42,14 @@ const sendmsg = function (sock, addr, port, msg, txid, callback) {
 };
 
 const callFunc = function (sock, addr, port, pass, func, args, callback) {
-    var cookieTxid = String(sock.counter++);
-    var cookieMsg = new Buffer(Bencode.encode({'q':'cookie','txid':cookieTxid}));
+    const cookieTxid = String(sock.counter++);
+    const cookieMsg = new Buffer(Bencode.encode({'q':'cookie','txid':cookieTxid}));
     sendmsg(sock, addr, port, cookieMsg, cookieTxid, function (err, ret) {
         if (err) { callback(err); return; }
         if (!ret) { throw new Error(); }
-        var cookie = ret.cookie;
+        const cookie = ret.cookie;
         if (typeof(cookie) !== 'string') { throw new Error("invalid cookie in [" + ret + "]"); }
-        var json /*:Object*/ = {
+        const json /*:Object*/ = {
             txid: String(sock.counter++),
             q: func,
             args: {}
@@ -70,7 +70,7 @@ const callFunc = function (sock, addr, port, pass, func, args, callback) {
 };
 
 const getArgs = function (func) {
-    var rArgs = [];
+    const rArgs = [];
     Object.keys(func).forEach(function (name) {
         if (func[name].required === 1) {
             rArgs.push({ name: name, type: func[name].type, required: true });
@@ -78,7 +78,7 @@ const getArgs = function (func) {
     });
     // be sure that the arguments are always in the same order
     rArgs.sort(function (a,b) { a = a.name; b = b.name; return (a !== b) ? (a < b) ? 1 : -1 : 0; });
-    var oArgs = [];
+    const oArgs = [];
     Object.keys(func).forEach(function (name) {
         if (func[name].required === 0) {
             oArgs.push({ name: name, type: func[name].type, required: false });
@@ -90,8 +90,8 @@ const getArgs = function (func) {
 };
 
 const makeFunctionDescription = function (funcName, func) {
-    var args = getArgs(func);
-    var outArgs = [];
+    const args = getArgs(func);
+    const outArgs = [];
     args.forEach(function (arg) {
         outArgs.push( ((arg.required) ? 'required ' : '') + arg.type + ' ' + arg.name );
     });
@@ -109,12 +109,12 @@ const compatibleType = function (typeName, obj) {
 };
 
 const makeFunction = function (sock, addr, port, pass, funcName, func) {
-    var args = getArgs(func);
+    const args = getArgs(func);
     return function () {
-        var i;
-        var argsOut = {};
+        let i;
+        const argsOut = {};
         for (i = 0; i < arguments.length-1; i++) {
-            var arg = arguments[i];
+            const arg = arguments[i];
             if (!args[i].required && (arg === null || arg === undefined)) { continue; }
             if (!compatibleType(args[i].type, arg)) {
                 throw new Error("argument [" + i + "] ([" + arguments[i] + "]) [" +
@@ -129,7 +129,7 @@ const makeFunction = function (sock, addr, port, pass, funcName, func) {
                             "required and is not specified");
         }
 
-        var callback = arguments[arguments.length-1];
+        const callback = arguments[arguments.length-1];
         if (typeof(callback) !== 'function') {
             throw new Error("callback is unspecified");
         }
@@ -141,9 +141,9 @@ const makeFunction = function (sock, addr, port, pass, funcName, func) {
 };
 
 const getFunctions = function (sock, addr, port, pass, callback) {
-    var funcs = {};
+    const funcs = {};
     nThen(function (waitFor) {
-        var next = function (i) {
+        const next = function (i) {
             callFunc(sock, addr, port, pass, 'Admin_availableFunctions', {page:i},
                 waitFor(function (err, ret) {
                     if (err) { throw err; }
@@ -159,8 +159,8 @@ const getFunctions = function (sock, addr, port, pass, callback) {
         next(0);
 
     }).nThen(function (waitFor) {
-        var funcDescriptions = [];
-        var cjdns = {};
+        const funcDescriptions = [];
+        const cjdns = {};
         Object.keys(funcs).forEach(function (name) {
             cjdns[name] = makeFunction(sock, addr, port, pass, name, funcs[name]);
             funcDescriptions.push(makeFunctionDescription(name, funcs[name]));
@@ -170,25 +170,21 @@ const getFunctions = function (sock, addr, port, pass, callback) {
     });
 };
 
-const connect = module.exports.connect = function (
-    addr /*:string*/,
-    port /*:number*/,
-    pass /*:?string*/,
-    callback /*:(Object)=>void*/)
-{
+const connect0 = (addr, port, pass, usingCjdnsadmin, callback) => {
     const sock = {
         _: UDP.createSocket((addr.indexOf(':') !== -1) ? 'udp6' : 'udp4'),
         semaphore: Saferphore.create(4),
         handlers: {},
         counter: Math.floor(Math.random() * 4000000000),
-        defaultHandler: undefined
+        defaultHandler: undefined,
+        timeout: DEFAULT_TIMEOUT
     };
     sock._.on('message', function (msg) {
-        var response = Bencode.decode(msg, 'utf8');
+        const response = Bencode.decode(msg, 'utf8');
         if (!response.txid) {
             throw new Error("Response [" + msg + "] with no txid");
         }
-        var handler = sock.handlers[response.txid];
+        const handler = sock.handlers[response.txid];
         if (!handler) {
             if (sock.defaultHandler) {
                 sock.defaultHandler(undefined, response);
@@ -200,48 +196,87 @@ const connect = module.exports.connect = function (
         handler.callback(undefined, response);
     });
 
+    if (usingCjdnsadmin !== '') {
+        usingCjdnsadmin = " using cjdnsadmin file at [" + usingCjdnsadmin + "]";
+    }
     nThen(function (waitFor) {
+        sock.timeout = 1000;
         callFunc(sock, addr, port, pass, 'ping', {}, waitFor(function (err, ret) {
+            sock.timeout = DEFAULT_TIMEOUT;
+            if (err) {
+                sock._.close();
+                waitFor.abort();
+                const msg = "Could not find cjdns (" + addr + ":" + port + ")" + usingCjdnsadmin +
+                    " see: https://github.com/cjdelisle/cjdnsadmin#connecting";
+                return void callback({ message: msg, code: 'ENOENT' });
+            }
+            //console.log("got pong! [" + JSON.stringify(ret) + "]");
+        }));
+    }).nThen(function (waitFor) {
+        if (pass === null) { return; }
+        callFunc(sock, addr, port, pass, 'AuthorizedPasswords_list', {}, waitFor(function (err, ret) {
             if (err) { throw err; }
+            if (ret.error) {
+                sock._.close();
+                waitFor.abort();
+                const msg = "Could not authenticate with cjdns (" + addr + ":" + port + ")" +
+                    usingCjdnsadmin +
+                    " see: https://github.com/cjdelisle/cjdnsadmin#authentication-issues";
+                return void callback({ message: msg, code: 'EPERM' });
+            }
             //console.log("got pong! [" + JSON.stringify(ret) + "]");
         }));
     }).nThen(function (waitFor) {
         getFunctions(sock, addr, port, pass, function (cjdns) {
             cjdns.disconnect = function () { sock._.close(); };
             cjdns.setDefaultHandler = function (handler) { sock.defaultHandler = handler; };
+            // $FlowFixMe not in object literal complaint
+            Object.defineProperty(cjdns, 'timeout', {
+                get: () => { return sock.timeout; },
+                set: (x) => { sock.timeout = x; }
+            });
             cjdns._ = sock;
-            callback(cjdns);
+            callback(undefined, cjdns);
         });
     });
 };
 
-const connectWithAdminInfo = module.exports.connectWithAdminInfo = function (
-    callback /*:(Object)=>void*/)
-{
-    var cjdnsAdmin = {'addr': '127.0.0.1', 'port': 11234, 'password': 'NONE'};
-    nThen(function (waitFor) {
-        if (!process.env.HOME) { throw new Error(); }
-        Fs.readFile(process.env.HOME + '/.cjdnsadmin', waitFor(function (err, ret) {
-            if (err && err.code !== 'ENOENT') { throw err; }
-            if (!err) { cjdnsAdmin = JSON.parse(String(ret)); }
-        }));
-    }).nThen(function (waitFor) {
-        connect(cjdnsAdmin.addr, cjdnsAdmin.port, cjdnsAdmin.password, callback);
-    });
+/*::
+export type Cjdnsadmin_Opts_t = {
+    addr?: string,
+    port?: number,
+    password?: string,
+    cjdnsadminPath?: string
 };
+export type Cjdnsadmin_Error_t = {
+    message: string,
+    code: 'ENOENT'|'EPERM'
+};
+*/
 
-const connectAsAnon = module.exports.connectAsAnon = function (
-    callback /*:(Object)=>void*/,
-    addr /*:string*/,
-    port /*:number*/)
-{
-    var cjdnsAdmin = {'addr': addr || '127.0.0.1', 'port': port || 11234, 'password': 'NONE'};
+module.exports.connect = function (
+    callback /*:(?Cjdnsadmin_Error_t, ?Object)=>void*/,
+    _opts /*:?Cjdnsadmin_Opts_t*/
+) {
+    const opts = _opts || {};
+    let cjdnsAdmin = {
+        addr: opts.addr || '127.0.0.1',
+        port: opts.port || 11234,
+        password: opts.password || (opts.anon) ? null : 'NONE'
+    };
+    if (!process.env.HOME) { throw new Error(); }
+    const path = opts.cjdnsadminPath || process.env.HOME + '/.cjdnsadmin';
+    let usingCjdnsadmin = '';
     nThen(function (waitFor) {
-        if (!process.env.HOME) { throw new Error(); }
-        Fs.readFile(process.env.HOME + '/.cjdnsadmin', waitFor(function (err, ret) {
-            if (!err) { cjdnsAdmin = JSON.parse(String(ret)); }
+        if ((opts.addr || opts.port || opts.password) && !opts.cjdnsadminPath) { return; }
+        Fs.readFile(path, waitFor(function (err, ret) {
+            if (err && err.code !== 'ENOENT') { throw err; }
+            if (!err) {
+                cjdnsAdmin = JSON.parse(String(ret));
+                usingCjdnsadmin = path;
+            }
         }));
     }).nThen(function (waitFor) {
-        connect(cjdnsAdmin.addr, cjdnsAdmin.port, null, callback);
+        connect0(cjdnsAdmin.addr, cjdnsAdmin.port, cjdnsAdmin.password, usingCjdnsadmin, callback);
     });
 };

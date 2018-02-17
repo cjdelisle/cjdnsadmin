@@ -13,14 +13,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-var Cjdns = require('./index');
-var nThen = require('nthen');
+const Cjdns = require('./index');
+const nThen = require('nthen');
 
-var cjdns;
+let cjdns;
 nThen(function (waitFor) {
-    Cjdns.connectWithAdminInfo(waitFor(function (c) { cjdns = c; }));
+    Cjdns.connect(waitFor(function (err, c) {
+        if (err) {
+            console.error(err.message);
+            waitFor.abort();
+        }
+        cjdns = c;
+    }));
 }).nThen(function (waitFor) {
-    var code;
+    let code;
     if (process.argv[process.argv.length-1].indexOf('cexec') !== -1) {
         code = 'functions(cb)';
         console.log("Usage: ./tools/cexec 'ping()' ## For example to send a ping request");
@@ -30,8 +36,9 @@ nThen(function (waitFor) {
         code = code.replace('(,cb);', '(cb);');
     }
     //jshint -W054
-    var f = new Function('x', 'cb', 'x.' + code);
-    f(cjdns, function (err, ret) {
+    const fn = new Function('x', 'cb', 'x.' + code);
+    // $FlowFixMe "no arguments are expected by new Function()"  horseshit
+    fn(cjdns, function (err, ret) {
         if (err) { throw err; }
         console.log(JSON.stringify(ret, null, '  '));
         cjdns.disconnect();
