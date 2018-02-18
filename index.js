@@ -12,7 +12,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+'use strict';
 const UDP = require('dgram');
 const Bencode = require('bencode');
 const Crypto = require('crypto');
@@ -114,7 +114,7 @@ const makeFunction = function (sock, addr, port, pass, funcName, func) {
         let i;
         const argsOut = {};
         for (i = 0; i < arguments.length-1; i++) {
-            const arg = arguments[i];
+            let arg = arguments[i];
             if (!args[i].required && (arg === null || arg === undefined)) { continue; }
             if (!compatibleType(args[i].type, arg)) {
                 throw new Error("argument [" + i + "] ([" + arguments[i] + "]) [" +
@@ -166,6 +166,7 @@ const getFunctions = function (sock, addr, port, pass, callback) {
             funcDescriptions.push(makeFunctionDescription(name, funcs[name]));
         });
         cjdns.functions = function (cb) { cb(undefined, funcDescriptions); };
+        cjdns._funcs = funcs;
         callback(cjdns);
     });
 };
