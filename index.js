@@ -166,7 +166,14 @@ const getFunctions = function (sock, addr, port, pass, callback) {
             funcDescriptions.push(makeFunctionDescription(name, funcs[name]));
         });
         cjdns.functions = function (cb) { cb(undefined, funcDescriptions); };
-        cjdns._funcs = funcs;
+        cjdns._funcs = {};
+        // Make sure arguments of functions in _funcs have the ordering from getArgs()
+        Object.keys(funcs).forEach((fn) => {
+            const args = cjdns._funcs[fn] = {};
+            getArgs(funcs[fn]).forEach((arg) => {
+                args[arg.name] = arg;
+            });
+        });
         callback(cjdns);
     });
 };
